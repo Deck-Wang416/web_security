@@ -150,13 +150,14 @@ async function attemptMove(row, column) {
   if (state.winner || !isLegalMove(state.board, row, column)) return;
   if (state.mode !== "local") {
     if (state.gameStatus !== "active" || state.currentPlayer !== state.you || state.requestPending) return;
+    const version = sessionVersion;
     state.requestPending = true;
     try {
       const serverState = await api(`/api/games/${state.gameId}/moves`, {
         method: "POST",
         body: JSON.stringify({ row, column })
       });
-      applyServerState(serverState);
+      if (version === sessionVersion) applyServerState(serverState);
     } catch (error) {
       showNotice(error.message);
       await pollGame();
@@ -179,6 +180,8 @@ function updateInterface() {
   const isDraw = !state.winner && state.moves === BOARD_SIZE * BOARD_SIZE;
   if (state.mode !== "local" && state.gameStatus === "waiting") {
     statusElement.textContent = "Waiting for an opponent…";
+  } else if (state.mode === "online" && state.gameStatus === "active" && !state.opponentConnected) {
+    statusElement.textContent = "Opponent disconnected";
   } else if (state.winner) {
     statusElement.textContent = state.mode !== "local"
       ? (state.winner === state.you ? "You win!" : "You lose")
@@ -258,8 +261,16 @@ async function pollGame(version = sessionVersion) {
 async function startMode(mode) {
   sessionVersion += 1;
   const version = sessionVersion;
+  const previousSession = { gameId: state.gameId, token: state.token };
   clearInterval(pollTimer);
   pollTimer = null;
+  if (previousSession.gameId && previousSession.token) {
+    fetch(`/api/games/${previousSession.gameId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${previousSession.token}` },
+      keepalive: true
+    }).catch(() => {});
+  }
   hideNotice();
   resetBoard();
   state.mode = mode;
@@ -285,7 +296,7 @@ async function startMode(mode) {
   connectionElement.className = "connection waiting";
   connectionLabel.textContent = "Joining…";
   statusElement.textContent = "Joining an online match…";
-  newGameButton.textContent = "Find new match";
+  newGameButton.textContent = mode === "ai" ? "New AI game" : "Find new match";
   try {
     const joined = await api("/api/games", { method: "POST", body: JSON.stringify({ mode }) });
     if (version !== sessionVersion) return;
