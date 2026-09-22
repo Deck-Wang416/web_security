@@ -8,8 +8,8 @@ import {
   findWinningLine,
   isLegalMove,
   otherPlayer
-} from "../public/js/game-rules.js";
-import { chooseAiMove } from "./ai.js";
+} from "../client/js/game-rules.js";
+import { chooseAiMove } from "../ai/ai.js";
 
 const TOKEN_BYTES = 32;
 const GAME_ID_BYTES = 12;

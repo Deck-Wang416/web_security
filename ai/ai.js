@@ -1,4 +1,4 @@
-import { BLACK, BOARD_SIZE, EMPTY, WHITE, findWinningLine, isLegalMove } from "../public/js/game-rules.js";
+import { BLACK, BOARD_SIZE, EMPTY, WHITE, findWinningLine, isLegalMove } from "../client/js/game-rules.js";
 
 const DIRECTIONS = [[0, 1], [1, 0], [1, 1], [1, -1]];
 

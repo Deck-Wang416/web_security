@@ -4,7 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GameError, GameStore } from "./game-store.js";
 
-const PUBLIC_ROOT = fileURLToPath(new URL("../public/", import.meta.url));
+const PUBLIC_ROOT = fileURLToPath(new URL("../client/", import.meta.url));
 const PORT = Number.parseInt(process.env.PORT || "3000", 10);
 const MAX_BODY_BYTES = 10_000;
 const store = new GameStore();
