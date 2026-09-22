@@ -56,10 +56,10 @@ async function readJson(request) {
 async function handleApi(request, response, url) {
   if (request.method === "POST" && url.pathname === "/api/games") {
     const body = await readJson(request);
-    if (body.mode !== "online") {
-      throw new GameError(400, "INVALID_MODE", "Mode must be online.");
+    if (body.mode !== "online" && body.mode !== "ai") {
+      throw new GameError(400, "INVALID_MODE", "Mode must be online or ai.");
     }
-    sendJson(response, 201, store.joinOnline());
+    sendJson(response, 201, body.mode === "ai" ? store.joinAi() : store.joinOnline());
     return;
   }
 

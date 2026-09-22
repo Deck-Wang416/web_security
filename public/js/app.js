@@ -148,7 +148,7 @@ function drawWinningLine() {
 
 async function attemptMove(row, column) {
   if (state.winner || !isLegalMove(state.board, row, column)) return;
-  if (state.mode === "online") {
+  if (state.mode !== "local") {
     if (state.gameStatus !== "active" || state.currentPlayer !== state.you || state.requestPending) return;
     state.requestPending = true;
     try {
@@ -177,15 +177,15 @@ async function attemptMove(row, column) {
 
 function updateInterface() {
   const isDraw = !state.winner && state.moves === BOARD_SIZE * BOARD_SIZE;
-  if (state.mode === "online" && state.gameStatus === "waiting") {
+  if (state.mode !== "local" && state.gameStatus === "waiting") {
     statusElement.textContent = "Waiting for an opponent…";
   } else if (state.winner) {
-    statusElement.textContent = state.mode === "online"
+    statusElement.textContent = state.mode !== "local"
       ? (state.winner === state.you ? "You win!" : "You lose")
       : `${playerName(state.winner)} wins!`;
   } else if (isDraw) {
     statusElement.textContent = "Draw game";
-  } else if (state.mode === "online") {
+  } else if (state.mode !== "local") {
     statusElement.textContent = state.currentPlayer === state.you
       ? `Your turn · ${playerName(state.you)}`
       : `${playerName(state.currentPlayer)} is thinking…`;
@@ -200,8 +200,8 @@ function updateInterface() {
     card.classList.toggle("current", state.gameStatus === "active" && !state.winner && !isDraw && state.currentPlayer === player);
     const name = card.querySelector(".player-name");
     const detail = card.querySelector(".player-detail");
-    if (state.mode === "online") {
-      name.textContent = player === state.you ? "You" : "Opponent";
+    if (state.mode !== "local") {
+      name.textContent = player === state.you ? "You" : (state.mode === "ai" ? "AI" : "Opponent");
       detail.textContent = `${playerName(player)}${player === BLACK ? " · first" : ""}`;
     } else {
       name.textContent = playerName(player);
@@ -230,7 +230,9 @@ function applyServerState(serverState) {
     opponentConnected: serverState.opponentConnected
   });
   connectionElement.className = `connection ${serverState.status === "waiting" ? "waiting" : "online"}`;
-  connectionLabel.textContent = serverState.status === "waiting" ? "Waiting for player" : "Online match";
+  connectionLabel.textContent = serverState.status === "waiting"
+    ? "Waiting for player"
+    : state.mode === "ai" ? "AI match" : "Online match";
   updateInterface();
 }
 
@@ -244,7 +246,7 @@ async function api(path, options = {}) {
 }
 
 async function pollGame(version = sessionVersion) {
-  if (state.mode !== "online" || !state.gameId || version !== sessionVersion) return;
+  if (state.mode === "local" || !state.gameId || version !== sessionVersion) return;
   try {
     const serverState = await api(`/api/games/${state.gameId}`);
     if (version === sessionVersion) applyServerState(serverState);
@@ -290,7 +292,7 @@ async function startMode(mode) {
     state.gameId = joined.gameId;
     state.token = joined.token;
     applyServerState(joined);
-    pollTimer = setInterval(() => pollGame(version), 700);
+    if (mode === "online") pollTimer = setInterval(() => pollGame(version), 700);
   } catch (error) {
     if (version !== sessionVersion) return;
     state.gameStatus = "waiting";

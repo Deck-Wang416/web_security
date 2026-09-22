@@ -9,6 +9,7 @@ import {
   isLegalMove,
   otherPlayer
 } from "../public/js/game-rules.js";
+import { chooseAiMove } from "./ai.js";
 
 const TOKEN_BYTES = 32;
 const GAME_ID_BYTES = 12;
@@ -58,6 +59,16 @@ export class GameStore {
     return this.#joinResponse(game, player);
   }
 
+  joinAi() {
+    const game = this.#createGame("ai");
+    const human = this.#createPlayer(BLACK);
+    game.players[BLACK] = human;
+    game.players[WHITE] = this.#createPlayer(WHITE);
+    game.status = "active";
+    this.games.set(game.id, game);
+    return this.#joinResponse(game, human);
+  }
+
   getState(gameId, token) {
     const game = this.#authenticatedGame(gameId, token);
     return this.#publicState(game, token);
@@ -67,6 +78,10 @@ export class GameStore {
     const game = this.#authenticatedGame(gameId, token);
     const player = this.#playerForToken(game, token);
     this.applyMove(game, player.color, row, column);
+    if (game.mode === "ai" && game.status === "active" && game.currentPlayer === WHITE) {
+      const move = chooseAiMove(game.board);
+      if (move) this.applyMove(game, WHITE, ...move);
+    }
     return this.#publicState(game, token);
   }
 
