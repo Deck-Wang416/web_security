@@ -195,6 +195,20 @@ h1 {
 .status { margin: 0; font-family: Georgia, serif; font-size: 1.3rem; }
 .move-count { margin: 5px 0 0; color: var(--muted); font-size: 0.78rem; }
 
+.notice {
+  margin: -8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(182, 77, 46, 0.3);
+  border-radius: 10px;
+  color: var(--accent-dark);
+  background: rgba(182, 77, 46, 0.07);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.connection.online .connection-dot { background: #258253; }
+.connection.waiting .connection-dot { background: #d18a25; }
+
 .primary-button {
   width: 100%;
   padding: 12px 18px;

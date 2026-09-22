@@ -16,6 +16,10 @@ const statusElement = document.querySelector("#status");
 const moveCountElement = document.querySelector("#move-count");
 const newGameButton = document.querySelector("#new-game");
 const playerCards = [...document.querySelectorAll(".player-card")];
+const modeButtons = [...document.querySelectorAll(".mode-button")];
+const connectionElement = document.querySelector("#connection");
+const connectionLabel = document.querySelector("#connection-label");
+const noticeElement = document.querySelector("#notice");
 
 const state = {
   board: createBoard(),
@@ -23,8 +27,18 @@ const state = {
   winner: EMPTY,
   winningLine: null,
   moves: 0,
-  cursor: { row: 9, column: 9 }
+  cursor: { row: 9, column: 9 },
+  mode: "local",
+  gameStatus: "active",
+  gameId: null,
+  token: null,
+  you: null,
+  opponentConnected: false,
+  requestPending: false
 };
+
+let pollTimer = null;
+let sessionVersion = 0;
 
 const geometry = { padding: 34, gap: 0 };
 
@@ -132,8 +146,26 @@ function drawWinningLine() {
   context.stroke();
 }
 
-function attemptMove(row, column) {
+async function attemptMove(row, column) {
   if (state.winner || !isLegalMove(state.board, row, column)) return;
+  if (state.mode === "online") {
+    if (state.gameStatus !== "active" || state.currentPlayer !== state.you || state.requestPending) return;
+    state.requestPending = true;
+    try {
+      const serverState = await api(`/api/games/${state.gameId}/moves`, {
+        method: "POST",
+        body: JSON.stringify({ row, column })
+      });
+      applyServerState(serverState);
+    } catch (error) {
+      showNotice(error.message);
+      await pollGame();
+    } finally {
+      state.requestPending = false;
+    }
+    return;
+  }
+
   const player = state.currentPlayer;
   state.board[row][column] = player;
   state.moves += 1;
@@ -145,15 +177,36 @@ function attemptMove(row, column) {
 
 function updateInterface() {
   const isDraw = !state.winner && state.moves === BOARD_SIZE * BOARD_SIZE;
-  statusElement.textContent = state.winner
-    ? `${playerName(state.winner)} wins!`
-    : isDraw ? "Draw game" : `${playerName(state.currentPlayer)} to move`;
+  if (state.mode === "online" && state.gameStatus === "waiting") {
+    statusElement.textContent = "Waiting for an opponent…";
+  } else if (state.winner) {
+    statusElement.textContent = state.mode === "online"
+      ? (state.winner === state.you ? "You win!" : "You lose")
+      : `${playerName(state.winner)} wins!`;
+  } else if (isDraw) {
+    statusElement.textContent = "Draw game";
+  } else if (state.mode === "online") {
+    statusElement.textContent = state.currentPlayer === state.you
+      ? `Your turn · ${playerName(state.you)}`
+      : `${playerName(state.currentPlayer)} is thinking…`;
+  } else {
+    statusElement.textContent = `${playerName(state.currentPlayer)} to move`;
+  }
   moveCountElement.textContent = state.winner || isDraw
     ? `${state.moves} moves played`
-    : `Move ${state.moves + 1}`;
+    : state.gameStatus === "waiting" ? "You are Black and move first" : `Move ${state.moves + 1}`;
   playerCards.forEach((card, index) => {
     const player = index === 0 ? BLACK : WHITE;
-    card.classList.toggle("current", !state.winner && !isDraw && state.currentPlayer === player);
+    card.classList.toggle("current", state.gameStatus === "active" && !state.winner && !isDraw && state.currentPlayer === player);
+    const name = card.querySelector(".player-name");
+    const detail = card.querySelector(".player-detail");
+    if (state.mode === "online") {
+      name.textContent = player === state.you ? "You" : "Opponent";
+      detail.textContent = `${playerName(player)}${player === BLACK ? " · first" : ""}`;
+    } else {
+      name.textContent = playerName(player);
+      detail.textContent = `Player ${player}${player === BLACK ? " · first" : ""}`;
+    }
   });
   canvas.setAttribute("aria-label", boardLabel(isDraw));
   draw();
@@ -163,6 +216,106 @@ function boardLabel(isDraw) {
   if (state.winner) return `19 by 19 board. ${playerName(state.winner)} wins after ${state.moves} moves.`;
   if (isDraw) return "19 by 19 board. The game is a draw.";
   return `19 by 19 board with ${state.moves} stones. ${playerName(state.currentPlayer)} to move. Keyboard cursor at row ${state.cursor.row + 1}, column ${state.cursor.column + 1}.`;
+}
+
+function applyServerState(serverState) {
+  Object.assign(state, {
+    board: serverState.board,
+    currentPlayer: serverState.currentPlayer,
+    winner: serverState.winner,
+    winningLine: serverState.winningLine,
+    moves: serverState.moves,
+    gameStatus: serverState.status,
+    you: serverState.you,
+    opponentConnected: serverState.opponentConnected
+  });
+  connectionElement.className = `connection ${serverState.status === "waiting" ? "waiting" : "online"}`;
+  connectionLabel.textContent = serverState.status === "waiting" ? "Waiting for player" : "Online match";
+  updateInterface();
+}
+
+async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...options.headers };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const response = await fetch(path, { ...options, headers });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || `Request failed (${response.status})`);
+  return data;
+}
+
+async function pollGame(version = sessionVersion) {
+  if (state.mode !== "online" || !state.gameId || version !== sessionVersion) return;
+  try {
+    const serverState = await api(`/api/games/${state.gameId}`);
+    if (version === sessionVersion) applyServerState(serverState);
+  } catch (error) {
+    if (version === sessionVersion) showNotice(error.message);
+  }
+}
+
+async function startMode(mode) {
+  sessionVersion += 1;
+  const version = sessionVersion;
+  clearInterval(pollTimer);
+  pollTimer = null;
+  hideNotice();
+  resetBoard();
+  state.mode = mode;
+  state.gameId = null;
+  state.token = null;
+  state.you = null;
+  modeButtons.forEach((button) => {
+    const active = button.dataset.mode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  if (mode === "local") {
+    state.gameStatus = "active";
+    connectionElement.className = "connection";
+    connectionLabel.textContent = "Local game";
+    newGameButton.textContent = "New game";
+    updateInterface();
+    return;
+  }
+
+  state.gameStatus = "waiting";
+  connectionElement.className = "connection waiting";
+  connectionLabel.textContent = "Joining…";
+  statusElement.textContent = "Joining an online match…";
+  newGameButton.textContent = "Find new match";
+  try {
+    const joined = await api("/api/games", { method: "POST", body: JSON.stringify({ mode }) });
+    if (version !== sessionVersion) return;
+    state.gameId = joined.gameId;
+    state.token = joined.token;
+    applyServerState(joined);
+    pollTimer = setInterval(() => pollGame(version), 700);
+  } catch (error) {
+    if (version !== sessionVersion) return;
+    state.gameStatus = "waiting";
+    connectionElement.className = "connection";
+    connectionLabel.textContent = "Offline";
+    statusElement.textContent = "Could not join";
+    showNotice(`${error.message} Start the Node.js server and try again.`);
+  }
+}
+
+function resetBoard() {
+  Object.assign(state, {
+    board: createBoard(), currentPlayer: BLACK, winner: EMPTY, winningLine: null, moves: 0,
+    gameStatus: "active", opponentConnected: false, requestPending: false
+  });
+}
+
+function showNotice(message) {
+  noticeElement.textContent = message;
+  noticeElement.hidden = false;
+}
+
+function hideNotice() {
+  noticeElement.hidden = true;
+  noticeElement.textContent = "";
 }
 
 function eventCoordinate(event) {
@@ -203,11 +356,12 @@ canvas.addEventListener("keydown", (event) => {
 canvas.addEventListener("focus", () => draw());
 canvas.addEventListener("blur", () => draw());
 newGameButton.addEventListener("click", () => {
-  Object.assign(state, {
-    board: createBoard(), currentPlayer: BLACK, winner: EMPTY, winningLine: null, moves: 0
-  });
-  updateInterface();
+  startMode(state.mode);
   canvas.focus();
+});
+
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => startMode(button.dataset.mode));
 });
 
 new ResizeObserver(resizeCanvas).observe(canvas);

@@ -18,7 +18,7 @@
         </div>
         <div class="connection" id="connection" aria-live="polite">
           <span class="connection-dot"></span>
-          Local game
+          <span id="connection-label">Local game</span>
         </div>
       </header>
 
@@ -30,7 +30,7 @@
               <button class="mode-button active" type="button" data-mode="local" aria-pressed="true">
                 Local
               </button>
-              <button class="mode-button" type="button" data-mode="online" aria-pressed="false" disabled>
+              <button class="mode-button" type="button" data-mode="online" aria-pressed="false">
                 Online
               </button>
               <button class="mode-button" type="button" data-mode="ai" aria-pressed="false" disabled>
@@ -64,6 +64,7 @@
             <p id="move-count" class="move-count">Move 1</p>
           </div>
 
+          <p id="notice" class="notice" role="alert" hidden></p>
           <button id="new-game" class="primary-button" type="button">New game</button>
 
           <details class="rules">
